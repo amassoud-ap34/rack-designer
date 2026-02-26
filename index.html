@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Rack Designer</title>
+        <link rel="stylesheet" href="style.css">
+    </head>
+    <body>
+        <div id="toolbar" class="toolbar pinned">
+            <div class="toolbar-header">
+                <span class="toolbar-title">Rack Tools</span>
+                <div class="toolbar-controls">
+                    <button id="pinToolbarBtn" type="button" class="toolbar-icon-btn" aria-pressed="true" title="Pin/Unpin toolbar">📌</button>
+                    <button id="toggleToolbarBtn" type="button" class="toolbar-icon-btn" aria-expanded="true" title="Collapse/Expand toolbar">◀</button>
+                </div>
+            </div>
+            <div id="toolbarBody" class="toolbar-body">
+                <button id="newProjectToolbarBtn" type="button">📄 New Project</button>
+                <button id="openProjectToolbarBtn" type="button">📂 Open Project</button>
+                <button id="addRackBtn" type="button">Add Rack</button>
+                <button id="deleteSelectedBtn" type="button" disabled>Delete Selected</button>
+                <button id="downloadPngBtn" type="button">📥 Download PNG</button>
+                <button id="saveProjectBtn" type="button">💾 Save Project</button>
+                <button id="exportProjectBtn" type="button">📤 Export Project</button>
+                <div id="autoSaveStatus" style="padding: 8px 12px; font-size: 11px; color: #718096; text-align: center; display: none;">
+                    <span id="autoSaveText">Auto-save enabled</span>
+                </div>
+                <div class="palette">
+                    <span class="palette-label">Devices</span>
+
+                    <div class="device-group" data-units="1">
+                        <button type="button" class="device-group-toggle">Device 1U ▾</button>
+                        <div class="device-group-body">
+                            <div class="element-list"></div>
+                            <div class="add-element-row">
+                                <input class="new-element-name" type="text" placeholder="Add 1U element" />
+                                <button type="button" class="color-picker-btn" data-bg-color="#FED7D7" data-font-color="#742A2A">
+                                    <div class="color-preview" style="background: #FED7D7;"></div>
+                                    <span>🎨</span>
+                                </button>
+                                <button type="button" class="add-element-btn">+</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="device-group" data-units="2">
+                        <button type="button" class="device-group-toggle">Device 2U ▾</button>
+                        <div class="device-group-body">
+                            <div class="element-list"></div>
+                            <div class="add-element-row">
+                                <input class="new-element-name" type="text" placeholder="Add 2U element" />
+                                <button type="button" class="color-picker-btn" data-bg-color="#C6F6D5" data-font-color="#22543D">
+                                    <div class="color-preview" style="background: #C6F6D5;"></div>
+                                    <span>🎨</span>
+                                </button>
+                                <button type="button" class="add-element-btn">+</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="device-group" data-units="3">
+                        <button type="button" class="device-group-toggle">Device 3U ▾</button>
+                        <div class="device-group-body">
+                            <div class="element-list"></div>
+                            <div class="add-element-row">
+                                <input class="new-element-name" type="text" placeholder="Add 3U element" />
+                                <button type="button" class="color-picker-btn" data-bg-color="#FEEBC8" data-font-color="#7C2D12">
+                                    <div class="color-preview" style="background: #FEEBC8;"></div>
+                                    <span>🎨</span>
+                                </button>
+                                <button type="button" class="add-element-btn">+</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="device-group" data-units="4">
+                        <button type="button" class="device-group-toggle">Device 6U▾</button>
+                        <div class="device-group-body">
+                            <div class="element-list"></div>
+                            <div class="add-element-row">
+                                <input class="new-element-name" type="text" placeholder="Add 6U element" />
+                                <button type="button" class="color-picker-btn" data-bg-color="#BEE3F8" data-font-color="#2C5282">
+                                    <div class="color-preview" style="background: #BEE3F8;"></div>
+                                    <span>🎨</span>
+                                </button>
+                                <button type="button" class="add-element-btn">+</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="device-group" data-units="shelf-3u">
+                        <button type="button" class="device-group-toggle">Shelf 3U ▾</button>
+                        <div class="device-group-body">
+                            <div class="element-list">
+                                <div class="palette-element" data-units="shelf-3u" data-shelf-type="3u-4" draggable="true">
+                                    <span class="device-name">Shelf 3U (4 slots)</span>
+                                </div>
+                                <div class="palette-element" data-units="shelf-3u" data-shelf-type="3u-6" draggable="true">
+                                    <span class="device-name">Shelf 3U (6 slots)</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="device-group" data-units="shelf-6u">
+                        <button type="button" class="device-group-toggle">Shelf 6U ▾</button>
+                        <div class="device-group-body">
+                            <div class="element-list">
+                                <div class="palette-element" data-units="shelf-6u" data-shelf-type="6u-3" draggable="true">
+                                    <span class="device-name">Shelf 6U (3 slots)</span>
+                                </div>
+                                <div class="palette-element" data-units="shelf-6u" data-shelf-type="6u-4" draggable="true">
+                                    <span class="device-name">Shelf 6U (4 slots)</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="container"></div>
+        <div id="projectModal" class="project-modal">
+            <div class="project-modal-card">
+                <h2 class="project-modal-title">Start Project</h2>
+                <p class="project-modal-subtitle">Create a new rack project or open an existing file.</p>
+                <div class="project-modal-actions">
+                    <button id="newProjectBtn" type="button" class="project-primary">New Project</button>
+                    <button id="openProjectBtn" type="button" class="project-secondary">Open Project</button>
+                </div>
+                <input id="projectFileInput" type="file" accept="application/json" hidden />
+            </div>
+        </div>
+        <div id="colorPickerModal" class="project-modal hidden">
+            <div class="project-modal-card" style="max-width: 320px;">
+                <h2 class="project-modal-title">Choose Colors</h2>
+                <div style="display: flex; flex-direction: column; gap: 16px; margin: 20px 0;">
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-size: 13px; color: #4A5568;">Background Color</label>
+                        <input id="bgColorInput" type="color" style="width: 100%; height: 50px; border: 1px solid #CBD5E0; border-radius: 6px; cursor: pointer;" />
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-size: 13px; color: #4A5568;">Font Color</label>
+                        <input id="fontColorInput" type="color" style="width: 100%; height: 50px; border: 1px solid #CBD5E0; border-radius: 6px; cursor: pointer;" />
+                    </div>
+                </div>
+                <div class="project-modal-actions">
+                    <button id="confirmColorBtn" type="button" class="project-primary">Confirm</button>
+                    <button id="cancelColorBtn" type="button" class="project-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+        <!-- Load scripts in dependency order -->
+        <script src="https://unpkg.com/konva@9/konva.min.js"></script>
+        <script src="constants.js"></script>
+        <script src="utils.js"></script>
+        <script src="rack-logic.js"></script>
+        <script src="project-manager.js"></script>
+        <script src="apps.js"></script>
+    </body>
+</html>
