@@ -6,6 +6,7 @@
     </head>
     <body>
         <div id="toolbar" class="toolbar pinned">
+            <div class="toolbar-resize-handle" id="toolbarResizeHandle"></div>
             <div class="toolbar-header">
                 <span class="toolbar-title">Rack Tools</span>
                 <div class="toolbar-controls">
@@ -20,6 +21,7 @@
                 <button id="deleteSelectedBtn" type="button" disabled>Delete Selected</button>
                 <button id="downloadPngBtn" type="button">📥 Download PNG</button>
                 <button id="saveProjectBtn" type="button">💾 Save Project</button>
+                <button id="saveProjectAsBtn" type="button">💾 Save As...</button>
                 <button id="exportProjectBtn" type="button">📤 Export Project</button>
                 <div id="autoSaveStatus" style="padding: 8px 12px; font-size: 11px; color: #718096; text-align: center; display: none;">
                     <span id="autoSaveText">Auto-save enabled</span>
@@ -91,6 +93,9 @@
                         <button type="button" class="device-group-toggle">Shelf 3U ▾</button>
                         <div class="device-group-body">
                             <div class="element-list">
+                                <div class="palette-element" data-units="shelf-3u" data-shelf-type="3u-4" draggable="true">
+                                    <span class="device-name">Shelf 3U (Blinder)</span>
+                                </div>
                                 <div class="palette-element" data-units="shelf-3u" data-shelf-type="3u-4" draggable="true">
                                     <span class="device-name">Shelf 3U (4 slots)</span>
                                 </div>

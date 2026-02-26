@@ -16,6 +16,7 @@ let appState = {
     isToolbarCollapsed: false,
     colorPickerCallback: null,
     autoSaveInterval: null,
+    currentProjectFilename: null,
 };
 
 // Run the app only after the HTML is fully loaded.
@@ -30,6 +31,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const toggleToolbarBtn = document.getElementById('toggleToolbarBtn');
     // Toolbar pin/unpin button.
     const pinToolbarBtn = document.getElementById('pinToolbarBtn');
+    // Toolbar resize handle.
+    const toolbarResizeHandle = document.getElementById('toolbarResizeHandle');
     // New project toolbar button.
     const newProjectToolbarBtn = document.getElementById('newProjectToolbarBtn');
     // Open project toolbar button.
@@ -42,6 +45,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const downloadPngBtn = document.getElementById('downloadPngBtn');
     // Save project JSON button.
     const saveProjectBtn = document.getElementById('saveProjectBtn');
+    // Save project as button.
+    const saveProjectAsBtn = document.getElementById('saveProjectAsBtn');
     // Export project JSON button.
     const exportProjectBtn = document.getElementById('exportProjectBtn');
     // Auto-save status elements.
@@ -72,7 +77,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // Create background layer with watermark.
-    appState.backgroundLayer = new Konva.Layer();
+    appState.backgroundLayer = new Konva.Layer({ listening: false });
     appState.stage.add(appState.backgroundLayer);
 
     appState.watermark = new Konva.Text({
@@ -99,7 +104,7 @@ document.addEventListener('DOMContentLoaded', function () {
     appState.stage.add(appState.layer);
 
     // Create tooltip layer that sits above everything else.
-    appState.tooltipLayer = new Konva.Layer();
+    appState.tooltipLayer = new Konva.Layer({ listening: false });
     appState.stage.add(appState.tooltipLayer);
 
     appState.tooltip = new Konva.Label({
@@ -140,36 +145,38 @@ document.addEventListener('DOMContentLoaded', function () {
                 appState.tooltip.getText().text(name);
                 appState.tooltip.position({ x: mousePos.x, y: mousePos.y - 10 });
                 appState.tooltip.opacity(0.95);
-                appState.tooltipLayer.batchDraw();
+                requestAnimationFrame(() => appState.tooltipLayer.batchDraw());
             }
         });
         node.on('mouseleave', function () {
             appState.tooltip.opacity(0);
-            appState.tooltipLayer.batchDraw();
+            requestAnimationFrame(() => appState.tooltipLayer.batchDraw());
         });
     }
 
     // Resize workspace so full rack height is always reachable by scroll.
     function resizeWorkspace() {
-        const container = document.getElementById('container');
-        const viewportHeight = window.innerHeight;
-        const minWorkspaceHeight = Math.ceil(rackHeight + (unitHeight * 2));
-        const workspaceHeight = Math.max(viewportHeight, minWorkspaceHeight);
+        requestAnimationFrame(() => {
+            const container = document.getElementById('container');
+            const viewportHeight = window.innerHeight;
+            const minWorkspaceHeight = Math.ceil(rackHeight + (unitHeight * 2));
+            const workspaceHeight = Math.max(viewportHeight, minWorkspaceHeight);
 
-        container.style.height = `${workspaceHeight}px`;
-        appState.stage.size({
-            width: container.clientWidth,
-            height: workspaceHeight,
+            container.style.height = `${workspaceHeight}px`;
+            appState.stage.size({
+                width: container.clientWidth,
+                height: workspaceHeight,
+            });
+            
+            // Update watermark position on resize.
+            appState.watermark.position({
+                x: (appState.stage.width() - appState.watermark.width()) / 2,
+                y: (appState.stage.height() - appState.watermark.height()) / 2 - 100,
+            });
+            
+            appState.backgroundLayer.batchDraw();
+            appState.layer.batchDraw();
         });
-        
-        // Update watermark position on resize.
-        appState.watermark.position({
-            x: (appState.stage.width() - appState.watermark.width()) / 2,
-            y: (appState.stage.height() - appState.watermark.height()) / 2 - 100,
-        });
-        
-        appState.backgroundLayer.batchDraw();
-        appState.layer.batchDraw();
     }
 
     // Sync toolbar classes, aria states, and workspace sizing.
@@ -261,6 +268,27 @@ document.addEventListener('DOMContentLoaded', function () {
         const key = getStorageKeyForUnits(units);
         const stored = localStorage.getItem(key);
         return stored ? JSON.parse(stored) : [];
+    }
+
+    // Storage key for shelf palette by group (shelf-3u, shelf-6u).
+    function getShelfStorageKey(groupUnits) {
+        return `rack-designer-shelves-${groupUnits}`;
+    }
+
+    // Save shelf elements currently in one shelf group list.
+    function saveShelfElements(groupUnits, elementList) {
+        const items = Array.from(elementList.querySelectorAll('.palette-element')).map((node) => ({
+            name: node.querySelector('.device-name')?.textContent?.trim() || '',
+            shelfType: node.dataset.shelfType || '',
+        })).filter((item) => item.name && item.shelfType);
+
+        localStorage.setItem(getShelfStorageKey(groupUnits), JSON.stringify(items));
+    }
+
+    // Load saved shelf elements for one shelf group.
+    function loadShelfElements(groupUnits) {
+        const stored = localStorage.getItem(getShelfStorageKey(groupUnits));
+        return stored ? JSON.parse(stored) : null;
     }
 
     // Attach drag payload behavior to one palette element item.
@@ -374,6 +402,38 @@ document.addEventListener('DOMContentLoaded', function () {
         return newEntry;
     }
 
+    // Create one shelf palette element with delete button (user-controlled deletion).
+    function createShelfPaletteElement(name, groupUnits, shelfType) {
+        const newEntry = document.createElement('div');
+        newEntry.className = 'palette-element';
+        newEntry.dataset.units = groupUnits;
+        newEntry.dataset.shelfType = shelfType;
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'device-name';
+        nameSpan.textContent = name;
+        newEntry.appendChild(nameSpan);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'delete-device-btn';
+        deleteBtn.type = 'button';
+        deleteBtn.textContent = '✕';
+        deleteBtn.title = 'Delete this shelf';
+
+        deleteBtn.addEventListener('click', function (event) {
+            event.stopPropagation();
+            const list = newEntry.parentElement;
+            newEntry.remove();
+            if (list) {
+                saveShelfElements(groupUnits, list);
+            }
+        });
+
+        newEntry.appendChild(deleteBtn);
+        attachElementDragBehavior(newEntry);
+        return newEntry;
+    }
+
     // Initialize expandable palette groups and add-item inputs.
     function initializeDevicePalette() {
         deviceGroups.forEach((group) => {
@@ -387,9 +447,27 @@ document.addEventListener('DOMContentLoaded', function () {
             });
 
             if (isShelfGroup) {
-                elementList.querySelectorAll('.palette-element').forEach((element) => {
-                    attachElementDragBehavior(element);
-                });
+                const savedShelfElements = loadShelfElements(displayUnits);
+
+                if (Array.isArray(savedShelfElements)) {
+                    elementList.innerHTML = '';
+                    savedShelfElements.forEach((item) => {
+                        const entry = createShelfPaletteElement(item.name, displayUnits, item.shelfType);
+                        elementList.appendChild(entry);
+                    });
+                } else {
+                    const defaults = Array.from(elementList.querySelectorAll('.palette-element')).map((element) => ({
+                        name: element.querySelector('.device-name')?.textContent?.trim() || '',
+                        shelfType: element.dataset.shelfType || '',
+                    })).filter((item) => item.name && item.shelfType);
+
+                    elementList.innerHTML = '';
+                    defaults.forEach((item) => {
+                        const entry = createShelfPaletteElement(item.name, displayUnits, item.shelfType);
+                        elementList.appendChild(entry);
+                    });
+                    saveShelfElements(displayUnits, elementList);
+                }
                 return;
             }
 
@@ -483,7 +561,7 @@ document.addEventListener('DOMContentLoaded', function () {
             reader.onload = function () {
                 try {
                     const data = JSON.parse(reader.result);
-                    loadProject(data);
+                    loadProject(data, file.name);
                     hideProjectModal();
                     startAutoSave();
                 } catch (error) {
@@ -519,6 +597,39 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // --- Toolbar behavior ---
 
+    // Toolbar resize functionality
+    let isResizing = false;
+    let resizeStartX = 0;
+    let resizeStartWidth = 0;
+
+    toolbarResizeHandle.addEventListener('mousedown', function (e) {
+        isResizing = true;
+        resizeStartX = e.clientX;
+        resizeStartWidth = toolbar.offsetWidth;
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'ew-resize';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', function (e) {
+        if (!isResizing) return;
+        const deltaX = e.clientX - resizeStartX;
+        const newWidth = Math.max(180, Math.min(500, resizeStartWidth + deltaX));
+        toolbar.style.width = newWidth + 'px';
+        if (appState.isToolbarPinned) {
+            document.documentElement.style.setProperty('--toolbar-width', newWidth + 'px');
+            resizeWorkspace();
+        }
+    });
+
+    document.addEventListener('mouseup', function () {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+        }
+    });
+
     toggleToolbarBtn.addEventListener('click', function () {
         appState.isToolbarCollapsed = !appState.isToolbarCollapsed;
         syncToolbarState();
@@ -548,6 +659,7 @@ document.addEventListener('DOMContentLoaded', function () {
     deleteSelectedBtn.addEventListener('click', deleteSelectedNode);
     downloadPngBtn.addEventListener('click', downloadRackAsPng);
     saveProjectBtn.addEventListener('click', saveProject);
+    saveProjectAsBtn.addEventListener('click', saveProjectAs);
     exportProjectBtn.addEventListener('click', exportProject);
     
     newProjectToolbarBtn.addEventListener('click', function () {
@@ -626,9 +738,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // --- Global events ---
 
-    window.addEventListener('resize', function () {
-        resizeWorkspace();
-    });
+    // Debounced resize handler for better performance
+    const debouncedResize = debounce(resizeWorkspace, 150);
+    window.addEventListener('resize', debouncedResize);
 
     appState.stage.on('click tap', function (event) {
         if (event.target === appState.stage) {
@@ -705,6 +817,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Expose project-manager.js functions globally
     window.resetWorkspace = resetWorkspace;
     window.saveProject = saveProject;
+    window.saveProjectAs = saveProjectAs;
     window.exportProject = exportProject;
     window.loadProject = loadProject;
     window.startAutoSave = startAutoSave;

@@ -1,5 +1,18 @@
 // Utility and Helper Functions
 
+// Debounce function to limit how often a function can fire.
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
 // Keep a number inside min/max.
 function clamp(value, min, max) {
     return Math.max(min, Math.min(value, max));

@@ -10,8 +10,8 @@ const unitHeight = 22.5;
 // Cabinet padding = 4 cm on each side.
 const cabinetPadding = 20;
 
-// Rack inner width = 52 cm (including side labels).
-const rackWidth = 260;
+// Rack inner width = 104 cm (including side labels) - doubled from original 52 cm.
+const rackWidth = 520;
 
 // Side gutter width for unit numbers inside the frame.
 const rackSideLabelWidth = 30;

@@ -101,6 +101,27 @@ body {
     padding: 12px;
     z-index: 10;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    min-width: 180px;
+    max-width: 500px;
+}
+
+.toolbar-resize-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 6px;
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 20;
+    transition: background 0.2s;
+}
+
+.toolbar-resize-handle:hover {
+    background: rgba(104, 119, 224, 0.15);
+}
+
+.toolbar-resize-handle:active {
+    background: rgba(104, 119, 224, 0.3);
 }
 
 body.toolbar-pinned .toolbar {

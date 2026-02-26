@@ -264,7 +264,7 @@ function createShelf(shelfType, elementName) {
         width: rackInnerWidth - 12,
         height: 20,
         text: shelfName,
-        fontSize: 11,
+        fontSize: 15,
         fill: colors.text,
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         fontStyle: '600',
@@ -309,10 +309,16 @@ function createShelf(shelfType, elementName) {
         appState.layer.batchDraw();
     });
 
+    // Throttle dragmove for better performance
+    let dragMoveFrame;
     device.on('dragmove', function () {
-        device.position({
-            x: clamp(device.x(), 0, appState.stage.width() - rackInnerWidth),
-            y: clamp(device.y(), 0, appState.stage.height() - device.getAttr('deviceHeight')),
+        if (dragMoveFrame) return;
+        dragMoveFrame = requestAnimationFrame(() => {
+            device.position({
+                x: clamp(device.x(), 0, appState.stage.width() - rackInnerWidth),
+                y: clamp(device.y(), 0, appState.stage.height() - device.getAttr('deviceHeight')),
+            });
+            dragMoveFrame = null;
         });
     });
 
@@ -470,11 +476,17 @@ function createDevice(displayUnits, elementName, customColor, customFontColor) {
         appState.layer.batchDraw();
     });
 
+    // Throttle dragmove for better performance
+    let dragMoveFrame;
     device.on('dragmove', function () {
-        const deviceWidth = getDeviceWidth(device);
-        device.position({
-            x: clamp(device.x(), 0, appState.stage.width() - deviceWidth),
-            y: clamp(device.y(), 0, appState.stage.height() - device.getAttr('deviceHeight')),
+        if (dragMoveFrame) return;
+        dragMoveFrame = requestAnimationFrame(() => {
+            const deviceWidth = getDeviceWidth(device);
+            device.position({
+                x: clamp(device.x(), 0, appState.stage.width() - deviceWidth),
+                y: clamp(device.y(), 0, appState.stage.height() - device.getAttr('deviceHeight')),
+            });
+            dragMoveFrame = null;
         });
     });
 
@@ -742,10 +754,16 @@ function createRack(x, y, rackName) {
 
     addRackUnitGrid(rack);
 
+    // Throttle rack dragmove for better performance
+    let rackDragFrame;
     rack.on('dragmove', function () {
-        rack.position({
-            x: clamp(rack.x(), 0, appState.stage.width() - cabinetWidth),
-            y: clamp(rack.y(), 0, appState.stage.height() - cabinetHeight),
+        if (rackDragFrame) return;
+        rackDragFrame = requestAnimationFrame(() => {
+            rack.position({
+                x: clamp(rack.x(), 0, appState.stage.width() - cabinetWidth),
+                y: clamp(rack.y(), 0, appState.stage.height() - cabinetHeight),
+            });
+            rackDragFrame = null;
         });
     });
 
