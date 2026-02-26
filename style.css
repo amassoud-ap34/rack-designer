@@ -315,7 +315,7 @@ body:not(.toolbar-pinned) #container {
     background: linear-gradient(135deg, #667EEA 0%, #764BA2 100%);
     color: #FFFFFF;
     border-radius: 6px;
-    cursor: grab;
+    cursor: pointer;
     user-select: none;
     font-weight: 500;
     font-size: 13px;
@@ -325,6 +325,12 @@ body:not(.toolbar-pinned) #container {
 .palette-element:hover {
     opacity: 0.9;
     transform: translateY(-1px);
+}
+
+.palette-element.placement-selected {
+    outline: 2px solid #2B6CB0;
+    outline-offset: 1px;
+    box-shadow: 0 0 0 2px rgba(43, 108, 176, 0.2);
 }
 
 .device-name {

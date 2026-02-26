@@ -8,6 +8,7 @@ function resetWorkspace() {
     appState.rackCounter = 0;
     appState.nextRackNameNumber = 1;
     appState.currentProjectFilename = null;
+    appState.currentProjectFileHandle = null;
     appState.layer.batchDraw();
 }
 
@@ -134,29 +135,43 @@ function loadProject(project, filename) {
     appState.layer.batchDraw();
 }
 
-// Save project - if filename exists, save directly; otherwise prompt
-function saveProject() {
-    if (appState.currentProjectFilename) {
-        // Save to existing filename
-        downloadProjectFile(appState.currentProjectFilename);
-    } else {
-        // No filename yet, prompt for one
-        saveProjectAs();
-    }
-}
+// Save project using a save dialog where user can choose new name or overwrite existing file.
+async function saveProject() {
+    const data = serializeProject();
+    const json = JSON.stringify(data, null, 2);
 
-// Save project with a new filename (always prompts)
-function saveProjectAs() {
-    const defaultName = appState.currentProjectFilename || 'rack-project';
-    const filename = window.prompt('Enter project filename:', defaultName);
-    
-    if (filename === null) return;
-    
-    const cleanFilename = filename.trim() || 'rack-project';
-    const finalFilename = cleanFilename.endsWith('.json') ? cleanFilename : `${cleanFilename}.json`;
-    
-    appState.currentProjectFilename = finalFilename;
-    downloadProjectFile(finalFilename);
+    if (typeof window.showSaveFilePicker === 'function') {
+        try {
+            const handle = await window.showSaveFilePicker({
+                suggestedName: appState.currentProjectFilename || 'rack-project.json',
+                types: [
+                    {
+                        description: 'JSON Project Files',
+                        accept: { 'application/json': ['.json'] },
+                    },
+                ],
+            });
+
+            const writable = await handle.createWritable();
+            await writable.write(json);
+            await writable.close();
+
+            appState.currentProjectFileHandle = handle;
+            appState.currentProjectFilename = handle.name || appState.currentProjectFilename;
+            localStorage.setItem('rack-designer-autosave', json);
+            localStorage.setItem('rack-designer-autosave-timestamp', new Date().toISOString());
+            sessionStorage.setItem('rack-designer-autosave', json);
+            return;
+        } catch (error) {
+            if (error && error.name === 'AbortError') {
+                return;
+            }
+            window.alert('Could not save using file dialog. Falling back to download.');
+        }
+    }
+
+    const fallbackName = appState.currentProjectFilename || 'rack-project.json';
+    downloadProjectFile(fallbackName);
 }
 
 // Export current project as a JSON file (with default filename).
@@ -177,6 +192,7 @@ function downloadProjectFile(filename) {
     // Save to localStorage for auto-recovery.
     localStorage.setItem('rack-designer-autosave', json);
     localStorage.setItem('rack-designer-autosave-timestamp', new Date().toISOString());
+    sessionStorage.setItem('rack-designer-autosave', json);
 }
 
 // Show/hide project modal.
@@ -198,6 +214,7 @@ function performAutoSave(options) {
         localStorage.setItem('rack-designer-autosave', json);
         localStorage.setItem('rack-designer-autosave-timestamp', new Date().toISOString());
         sessionStorage.setItem('rack-designer-autosave', json);
+        window.name = `rack-designer-autosave:${json}`;
         
         // Show save confirmation briefly.
         const autoSaveText = document.getElementById('autoSaveText');
@@ -263,8 +280,12 @@ document.addEventListener('visibilitychange', function () {
 
 // Check for auto-saved project and offer recovery.
 function checkAutoSaveRecovery() {
+    const nameBackup = window.name && window.name.startsWith('rack-designer-autosave:')
+        ? window.name.slice('rack-designer-autosave:'.length)
+        : null;
     const autosave = sessionStorage.getItem('rack-designer-autosave')
-        || localStorage.getItem('rack-designer-autosave');
+        || localStorage.getItem('rack-designer-autosave')
+        || nameBackup;
     if (autosave) {
         try {
             const data = JSON.parse(autosave);
@@ -277,6 +298,9 @@ function checkAutoSaveRecovery() {
             localStorage.removeItem('rack-designer-autosave');
             localStorage.removeItem('rack-designer-autosave-timestamp');
             sessionStorage.removeItem('rack-designer-autosave');
+            if (window.name && window.name.startsWith('rack-designer-autosave:')) {
+                window.name = '';
+            }
         }
     }
 

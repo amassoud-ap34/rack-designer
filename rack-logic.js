@@ -202,6 +202,92 @@ function placeDeviceInShelf(device, shelf, dropPoint) {
     return true;
 }
 
+// Place a device in a specific shelf slot index.
+function placeDeviceInShelfSlot(device, shelf, slotIndex) {
+    if (!isDeviceCompatibleWithShelf(device, shelf)) {
+        return false;
+    }
+
+    const numSlots = shelf.getAttr('numSlots');
+    if (slotIndex < 0 || slotIndex >= numSlots) {
+        return false;
+    }
+
+    ensureShelfSlots(shelf);
+    if (shelf._slotOccupancy[slotIndex]) {
+        return false;
+    }
+
+    const slotWidth = rackInnerWidth / numSlots;
+    const slotLeft = slotIndex * slotWidth;
+
+    device.moveTo(shelf);
+    device.position({ x: slotLeft, y: 0 });
+    device.setAttr('inShelf', true);
+    device.setAttr('shelfSlotIndex', slotIndex);
+    shelf._slotOccupancy[slotIndex] = device;
+    return true;
+}
+
+// Place palette payload on an exact rack unit.
+function placePayloadAtRackUnit(payload, rack, startUnit) {
+    const shelfType = payload.shelfType || null;
+    const displayUnits = parseInt(payload.units, 10) || payload.units;
+
+    if (!shelfType && (displayUnits === 3 || displayUnits === 4)) {
+        window.alert('Place this device into a matching shelf slot.');
+        return false;
+    }
+
+    let element;
+    if (shelfType) {
+        element = createShelf(shelfType, payload.name);
+    } else {
+        element = createDevice(displayUnits, payload.name, payload.color || null, payload.fontColor || null);
+    }
+
+    const units = element.getAttr('units');
+    const maxStartUnit = rackUnits - units;
+    const normalizedStart = clamp(startUnit, 0, maxStartUnit);
+
+    if (!isUnitRangeFree(rack, normalizedStart, units, null)) {
+        element.destroy();
+        window.alert(`No free ${units}U space at this rack unit.`);
+        return false;
+    }
+
+    placeElementAtStartUnit(element, rack, normalizedStart);
+    appState.layer.batchDraw();
+    if (typeof window.saveAutoSaveSilently === 'function') {
+        window.saveAutoSaveSilently();
+    }
+    return true;
+}
+
+// Place palette payload into a specific shelf slot.
+function placePayloadInShelfSlot(payload, shelf, slotIndex) {
+    if (payload.shelfType) {
+        window.alert('Shelf elements must be placed on rack units.');
+        return false;
+    }
+
+    const displayUnits = parseInt(payload.units, 10) || payload.units;
+    const device = createDevice(displayUnits, payload.name, payload.color || null, payload.fontColor || null);
+    const placed = placeDeviceInShelfSlot(device, shelf, slotIndex);
+
+    if (!placed) {
+        device.destroy();
+        window.alert('Selected shelf slot is not available for this device.');
+        return false;
+    }
+
+    appState.layer.batchDraw();
+    if (typeof window.saveAutoSaveSilently === 'function') {
+        window.saveAutoSaveSilently();
+    }
+    return true;
+}
+
 // Create a shelf device with internal slots (vertical dividers).
 function createShelf(shelfType, elementName) {
     const shelfConfigs = {
@@ -223,7 +309,7 @@ function createShelf(shelfType, elementName) {
     const device = new Konva.Group({
         x: 0,
         y: 0,
-        draggable: true,
+        draggable: false,
         name: 'device rack-element',
     });
 
@@ -288,73 +374,46 @@ function createShelf(shelfType, elementName) {
         }));
     }
 
+    for (let i = 0; i < numSlots; i++) {
+        const slotRect = new Konva.Rect({
+            x: i * slotWidth,
+            y: 0,
+            width: slotWidth,
+            height: deviceHeight,
+            fill: 'transparent',
+            listening: true,
+            name: 'shelf-slot',
+        });
+        slotRect.setAttr('slotIndex', i);
+
+        slotRect.on('mouseenter', function () {
+            slotRect.fill('rgba(104, 119, 224, 0.08)');
+            appState.layer.batchDraw();
+        });
+
+        slotRect.on('mouseleave', function () {
+            slotRect.fill('transparent');
+            appState.layer.batchDraw();
+        });
+
+        slotRect.on('click tap', function (event) {
+            if (!appState.pendingPlacement) {
+                return;
+            }
+
+            event.cancelBubble = true;
+            const placed = placePayloadInShelfSlot(appState.pendingPlacement, device, i);
+            if (placed && typeof window.clearPendingPlacement === 'function') {
+                window.clearPendingPlacement();
+            }
+        });
+
+        device.add(slotRect);
+    }
+
     device.on('click tap', function (event) {
         event.cancelBubble = true;
         selectNode(device);
-    });
-
-    device.on('dragstart', function () {
-        selectNode(device);
-        const originParent = device.getParent();
-        device._originRack = originParent.hasName('rack') ? originParent : null;
-        device._originShelf = originParent.getAttr('isShelf') ? originParent : null;
-        device._originShelfSlotIndex = device.getAttr('shelfSlotIndex');
-        device._originShelfLocalPos = { x: device.x(), y: device.y() };
-        device._originStartUnit = Math.round(device.y() / unitHeight);
-        device._originAbsolutePosition = device.getAbsolutePosition();
-
-        const absolutePos = device.getAbsolutePosition();
-        device.moveTo(layer);
-        device.position(absolutePos);
-        appState.layer.batchDraw();
-    });
-
-    // Throttle dragmove for better performance
-    let dragMoveFrame;
-    device.on('dragmove', function () {
-        if (dragMoveFrame) return;
-        dragMoveFrame = requestAnimationFrame(() => {
-            device.position({
-                x: clamp(device.x(), 0, appState.stage.width() - rackInnerWidth),
-                y: clamp(device.y(), 0, appState.stage.height() - device.getAttr('deviceHeight')),
-            });
-            dragMoveFrame = null;
-        });
-    });
-
-    device.on('dragend', function () {
-        const centerPoint = {
-            x: device.x() + rackInnerWidth / 2,
-            y: device.y() + device.getAttr('deviceHeight') / 2,
-        };
-
-        const targetRack = getRackAtPoint(centerPoint);
-        let placed = false;
-
-        if (targetRack) {
-            placed = placeDeviceInRack(device, targetRack, centerPoint);
-        }
-
-        if (!placed && device._originRack && device._originRack.getStage()) {
-            const fallbackStartUnit = findNearestAvailableStartUnit(
-                device._originRack,
-                device.getAttr('units'),
-                device._originStartUnit,
-                device,
-            );
-
-            if (fallbackStartUnit !== null) {
-                placeElementAtStartUnit(device, device._originRack, fallbackStartUnit);
-                placed = true;
-            }
-        }
-
-        if (!placed && device._originAbsolutePosition) {
-            device.moveTo(layer);
-            device.position(device._originAbsolutePosition);
-        }
-
-        appState.layer.batchDraw();
     });
 
     device.on('dblclick dbltap', function () {
@@ -407,7 +466,7 @@ function createDevice(displayUnits, elementName, customColor, customFontColor) {
     const device = new Konva.Group({
         x: 0,
         y: 0,
-        draggable: true,
+        draggable: false,
         name: 'device rack-element',
     });
 
@@ -460,93 +519,6 @@ function createDevice(displayUnits, elementName, customColor, customFontColor) {
     device.on('click tap', function (event) {
         event.cancelBubble = true;
         selectNode(device);
-    });
-
-    device.on('dragstart', function () {
-        selectNode(device);
-        device._originRack = device.getParent().hasName('rack') ? device.getParent() : null;
-        device._originStartUnit = Math.round(device.y() / unitHeight);
-        device._originAbsolutePosition = device.getAbsolutePosition();
-
-        releaseShelfSlotForDevice(device);
-
-        const absolutePos = device.getAbsolutePosition();
-        device.moveTo(layer);
-        device.position(absolutePos);
-        appState.layer.batchDraw();
-    });
-
-    // Throttle dragmove for better performance
-    let dragMoveFrame;
-    device.on('dragmove', function () {
-        if (dragMoveFrame) return;
-        dragMoveFrame = requestAnimationFrame(() => {
-            const deviceWidth = getDeviceWidth(device);
-            device.position({
-                x: clamp(device.x(), 0, appState.stage.width() - deviceWidth),
-                y: clamp(device.y(), 0, appState.stage.height() - device.getAttr('deviceHeight')),
-            });
-            dragMoveFrame = null;
-        });
-    });
-
-    device.on('dragend', function () {
-        const deviceWidth = getDeviceWidth(device);
-        const centerPoint = {
-            x: device.x() + deviceWidth / 2,
-            y: device.y() + device.getAttr('deviceHeight') / 2,
-        };
-
-        const targetShelf = getShelfAtPoint(centerPoint);
-        let placed = false;
-
-        if (targetShelf) {
-            placed = placeDeviceInShelf(device, targetShelf, centerPoint);
-        }
-
-        const displayUnits = device.getAttr('displayUnits');
-
-        if (!placed && displayUnits !== 3 && displayUnits !== 4) {
-            const targetRack = getRackAtPoint(centerPoint);
-            if (targetRack) {
-                placed = placeDeviceInRack(device, targetRack, centerPoint);
-            }
-        }
-
-        if (!placed && device._originShelf && device._originShelf.getStage()) {
-            ensureShelfSlots(device._originShelf);
-            const slotIndex = device._originShelfSlotIndex;
-
-            if (slotIndex !== null && slotIndex !== undefined && !device._originShelf._slotOccupancy[slotIndex]) {
-                device.moveTo(device._originShelf);
-                device.position(device._originShelfLocalPos || { x: 0, y: 0 });
-                device.setAttr('inShelf', true);
-                device.setAttr('shelfSlotIndex', slotIndex);
-                device._originShelf._slotOccupancy[slotIndex] = device;
-                placed = true;
-            }
-        }
-
-        if (!placed && device._originRack && device._originRack.getStage()) {
-            const fallbackStartUnit = findNearestAvailableStartUnit(
-                device._originRack,
-                device.getAttr('units'),
-                device._originStartUnit,
-                device,
-            );
-
-            if (fallbackStartUnit !== null) {
-                placeElementAtStartUnit(device, device._originRack, fallbackStartUnit);
-                placed = true;
-            }
-        }
-
-        if (!placed && device._originAbsolutePosition) {
-            device.moveTo(layer);
-            device.position(device._originAbsolutePosition);
-        }
-
-        appState.layer.batchDraw();
     });
 
     device.on('dblclick dbltap', function () {
@@ -624,6 +596,8 @@ function addRackUnitGrid(rack) {
             listening: true,
             name: 'unit-hover',
         });
+        hoverRect.setAttr('startUnit', i);
+        hoverRect.setAttr('unitNumber', unitNumber);
 
         hoverRect.on('mouseenter', function () {
             hoverRect.fill('rgba(104, 119, 224, 0.08)');
@@ -633,6 +607,18 @@ function addRackUnitGrid(rack) {
         hoverRect.on('mouseleave', function () {
             hoverRect.fill('transparent');
             appState.layer.batchDraw();
+        });
+
+        hoverRect.on('click tap', function (event) {
+            if (!appState.pendingPlacement) {
+                return;
+            }
+
+            event.cancelBubble = true;
+            const placed = placePayloadAtRackUnit(appState.pendingPlacement, rack, i);
+            if (placed && typeof window.clearPendingPlacement === 'function') {
+                window.clearPendingPlacement();
+            }
         });
 
         rack.add(hoverRect);
@@ -668,7 +654,7 @@ function createRack(x, y, rackName) {
     const rack = new Konva.Group({
         x,
         y,
-        draggable: true,
+        draggable: false,
         name: 'rack',
     });
 
@@ -754,23 +740,6 @@ function createRack(x, y, rackName) {
 
     addRackUnitGrid(rack);
 
-    // Throttle rack dragmove for better performance
-    let rackDragFrame;
-    rack.on('dragmove', function () {
-        if (rackDragFrame) return;
-        rackDragFrame = requestAnimationFrame(() => {
-            rack.position({
-                x: clamp(rack.x(), 0, appState.stage.width() - cabinetWidth),
-                y: clamp(rack.y(), 0, appState.stage.height() - cabinetHeight),
-            });
-            rackDragFrame = null;
-        });
-    });
-
-    rack.on('dragstart', function () {
-        selectNode(rack);
-    });
-
     rack.on('click tap', function (event) {
         event.cancelBubble = true;
         selectNode(rack);
@@ -812,4 +781,7 @@ function addRack() {
     const y = x > (appState.stage.width() - cabinetWidth) ? 70 : 20;
 
     createRack(wrappedX, y, rackName);
+    if (typeof window.saveAutoSaveSilently === 'function') {
+        window.saveAutoSaveSilently();
+    }
 }

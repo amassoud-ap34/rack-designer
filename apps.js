@@ -17,6 +17,9 @@ let appState = {
     colorPickerCallback: null,
     autoSaveInterval: null,
     currentProjectFilename: null,
+    currentProjectFileHandle: null,
+    pendingPlacement: null,
+    pendingPaletteNode: null,
 };
 
 // Run the app only after the HTML is fully loaded.
@@ -45,8 +48,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const downloadPngBtn = document.getElementById('downloadPngBtn');
     // Save project JSON button.
     const saveProjectBtn = document.getElementById('saveProjectBtn');
-    // Save project as button.
-    const saveProjectAsBtn = document.getElementById('saveProjectAsBtn');
     // Export project JSON button.
     const exportProjectBtn = document.getElementById('exportProjectBtn');
     // Auto-save status elements.
@@ -255,6 +256,9 @@ document.addEventListener('DOMContentLoaded', function () {
         appState.selectedNode = null;
         updateDeleteButtonState();
         appState.layer.batchDraw();
+        if (typeof saveAutoSaveSilently === 'function') {
+            saveAutoSaveSilently();
+        }
     }
 
     // Save custom devices list to localStorage.
@@ -291,31 +295,41 @@ document.addEventListener('DOMContentLoaded', function () {
         return stored ? JSON.parse(stored) : null;
     }
 
-    // Attach drag payload behavior to one palette element item.
-    function attachElementDragBehavior(elementNode) {
-        elementNode.setAttribute('draggable', 'true');
+    function clearPendingPlacement() {
+        appState.pendingPlacement = null;
+        if (appState.pendingPaletteNode) {
+            appState.pendingPaletteNode.classList.remove('placement-selected');
+            appState.pendingPaletteNode = null;
+        }
+    }
 
-        elementNode.addEventListener('dragstart', function (event) {
-            if (event.target.classList && event.target.classList.contains('delete-device-btn')) {
-                event.preventDefault();
+    function getPalettePayload(elementNode) {
+        return {
+            units: parseInt(elementNode.dataset.units, 10) || elementNode.dataset.units,
+            name: elementNode.querySelector('.device-name')?.textContent?.trim() || elementNode.textContent.trim(),
+            color: elementNode.dataset.color || null,
+            fontColor: elementNode.dataset.fontColor || null,
+            shelfType: elementNode.dataset.shelfType || null,
+        };
+    }
+
+    // Attach click-to-select behavior to one palette element item.
+    function attachElementDragBehavior(elementNode) {
+        elementNode.setAttribute('draggable', 'false');
+        elementNode.addEventListener('click', function (event) {
+            if (event.target.classList && (event.target.classList.contains('delete-device-btn') || event.target.classList.contains('edit-device-btn'))) {
                 return;
             }
 
-            const displayUnits = parseInt(elementNode.dataset.units, 10) || elementNode.dataset.units;
-            const deviceName = elementNode.querySelector('.device-name')?.textContent?.trim() || elementNode.textContent.trim();
-            const customColor = elementNode.dataset.color || null;
-            const customFontColor = elementNode.dataset.fontColor || null;
-            const shelfType = elementNode.dataset.shelfType || null;
-            const payload = {
-                units: displayUnits,
-                name: deviceName,
-                color: customColor,
-                fontColor: customFontColor,
-                shelfType: shelfType,
-            };
+            if (appState.pendingPaletteNode === elementNode) {
+                clearPendingPlacement();
+                return;
+            }
 
-            event.dataTransfer.setData('application/json', JSON.stringify(payload));
-            event.dataTransfer.setData('text/plain', String(displayUnits));
+            clearPendingPlacement();
+            appState.pendingPlacement = getPalettePayload(elementNode);
+            appState.pendingPaletteNode = elementNode;
+            elementNode.classList.add('placement-selected');
         });
     }
 
@@ -659,7 +673,6 @@ document.addEventListener('DOMContentLoaded', function () {
     deleteSelectedBtn.addEventListener('click', deleteSelectedNode);
     downloadPngBtn.addEventListener('click', downloadRackAsPng);
     saveProjectBtn.addEventListener('click', saveProject);
-    saveProjectAsBtn.addEventListener('click', saveProjectAs);
     exportProjectBtn.addEventListener('click', exportProject);
     
     newProjectToolbarBtn.addEventListener('click', function () {
@@ -675,66 +688,7 @@ document.addEventListener('DOMContentLoaded', function () {
         projectFileInput.click();
     });
 
-    // --- Drag/drop from palette to canvas ---
-
-    container.addEventListener('dragover', function (event) {
-        event.preventDefault();
-    });
-
-    container.addEventListener('drop', function (event) {
-        event.preventDefault();
-        appState.stage.setPointersPositions(event);
-
-        const pointer = appState.stage.getPointerPosition();
-        if (!pointer) return;
-
-        let units, elementName = '', customColor = null, customFontColor = null, shelfType = null;
-        const jsonPayload = event.dataTransfer.getData('application/json');
-        
-        if (jsonPayload) {
-            try {
-                const parsed = JSON.parse(jsonPayload);
-                units = parseInt(parsed.units, 10) || parsed.units;
-                elementName = (parsed.name || '').trim();
-                customColor = parsed.color || null;
-                customFontColor = parsed.fontColor || null;
-                shelfType = parsed.shelfType || null;
-            } catch (error) {
-                units = parseInt(event.dataTransfer.getData('text/plain'), 10);
-            }
-        } else {
-            units = parseInt(event.dataTransfer.getData('text/plain'), 10);
-        }
-
-        if (!shelfType && Number.isNaN(units)) return;
-
-        const targetShelf = getShelfAtPoint(pointer);
-        if (targetShelf && !shelfType) {
-            const device = createDevice(parseInt(units, 10), elementName, customColor, customFontColor);
-            const placed = placeDeviceInShelf(device, targetShelf, pointer);
-
-            if (!placed) {
-                device.destroy();
-                window.alert('No free shelf slot available.');
-            } else {
-                appState.layer.batchDraw();
-            }
-
-            return;
-        }
-
-        if (!shelfType && (units === 3 || units === 4)) {
-            window.alert('Place this device into a matching shelf slot.');
-            return;
-        }
-
-        const targetRack = getRackAtPoint(pointer);
-        if (!targetRack) {
-            return;
-        }
-
-        addDeviceToRack(parseInt(units, 10), targetRack, pointer, elementName, customColor, customFontColor, shelfType, true);
-    });
+    // --- Click-to-place from palette to canvas ---
 
     // --- Global events ---
 
@@ -743,7 +697,28 @@ document.addEventListener('DOMContentLoaded', function () {
     window.addEventListener('resize', debouncedResize);
 
     appState.stage.on('click tap', function (event) {
+        if (appState.pendingPlacement && event.target && event.target.hasName && event.target.hasName('unit-hover')) {
+            const rack = event.target.getParent();
+            const startUnit = event.target.getAttr('startUnit');
+            const placed = placePayloadAtRackUnit(appState.pendingPlacement, rack, startUnit);
+            if (placed) {
+                clearPendingPlacement();
+            }
+            return;
+        }
+
+        if (appState.pendingPlacement && event.target && event.target.hasName && event.target.hasName('shelf-slot')) {
+            const shelf = event.target.getParent();
+            const slotIndex = event.target.getAttr('slotIndex');
+            const placed = placePayloadInShelfSlot(appState.pendingPlacement, shelf, slotIndex);
+            if (placed) {
+                clearPendingPlacement();
+            }
+            return;
+        }
+
         if (event.target === appState.stage) {
+            clearPendingPlacement();
             clearSelection();
         }
     });
@@ -810,6 +785,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Expose critical functions globally so rack-logic.js can use them
     window.selectNode = selectNode;
     window.clearSelection = clearSelection;
+    window.clearPendingPlacement = clearPendingPlacement;
     window.attachTooltip = attachTooltip;
     window.updateDeleteButtonState = updateDeleteButtonState;
     window.deleteSelectedNode = deleteSelectedNode;
@@ -817,7 +793,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Expose project-manager.js functions globally
     window.resetWorkspace = resetWorkspace;
     window.saveProject = saveProject;
-    window.saveProjectAs = saveProjectAs;
+    window.saveAutoSaveSilently = saveAutoSaveSilently;
     window.exportProject = exportProject;
     window.loadProject = loadProject;
     window.startAutoSave = startAutoSave;
