@@ -50,6 +50,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const saveProjectBtn = document.getElementById('saveProjectBtn');
     // Export project JSON button.
     const exportProjectBtn = document.getElementById('exportProjectBtn');
+    // Toolbar profile export/import buttons.
+    const exportToolbarProfileBtn = document.getElementById('exportToolbarProfileBtn');
+    const importToolbarProfileBtn = document.getElementById('importToolbarProfileBtn');
+    const toolbarProfileFileInput = document.getElementById('toolbarProfileFileInput');
     // Auto-save status elements.
     const autoSaveStatus = document.getElementById('autoSaveStatus');
     const autoSaveText = document.getElementById('autoSaveText');
@@ -310,6 +314,105 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function saveDeletedShelfElements(groupUnits, deletedList) {
         localStorage.setItem(getShelfDeletedStorageKey(groupUnits), JSON.stringify(deletedList));
+    }
+
+    function getShelfItemsFromDom(groupUnits) {
+        const group = document.querySelector(`.device-group[data-units="${groupUnits}"]`);
+        if (!group) {
+            return [];
+        }
+
+        const list = group.querySelector('.element-list');
+        if (!list) {
+            return [];
+        }
+
+        return Array.from(list.querySelectorAll('.palette-element')).map((node) => ({
+            name: node.querySelector('.device-name')?.textContent?.trim() || '',
+            shelfType: node.dataset.shelfType || '',
+        })).filter((item) => item.name && item.shelfType);
+    }
+
+    function buildToolbarProfile() {
+        const profile = {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            customDevices: {
+                '1U': loadCustomDevices(1),
+                '2U': loadCustomDevices(2),
+                '3U': loadCustomDevices(3),
+                '4U': loadCustomDevices(4),
+            },
+            shelves: {
+                'shelf-3u': {
+                    items: loadShelfElements('shelf-3u') || getShelfItemsFromDom('shelf-3u'),
+                    deleted: loadDeletedShelfElements('shelf-3u'),
+                },
+                'shelf-6u': {
+                    items: loadShelfElements('shelf-6u') || getShelfItemsFromDom('shelf-6u'),
+                    deleted: loadDeletedShelfElements('shelf-6u'),
+                },
+            },
+        };
+
+        return profile;
+    }
+
+    function exportToolbarProfile() {
+        const profile = buildToolbarProfile();
+        const json = JSON.stringify(profile, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        triggerDownload(url, `toolbar-profile-${timestamp}.json`);
+        URL.revokeObjectURL(url);
+    }
+
+    function applyToolbarProfile(profile) {
+        if (!profile || typeof profile !== 'object') {
+            throw new Error('Invalid profile data.');
+        }
+
+        const deviceMap = [
+            { key: '1U', units: 1 },
+            { key: '2U', units: 2 },
+            { key: '3U', units: 3 },
+            { key: '4U', units: 4 },
+        ];
+
+        deviceMap.forEach(({ key, units }) => {
+            const list = profile.customDevices && Array.isArray(profile.customDevices[key])
+                ? profile.customDevices[key]
+                : [];
+            saveCustomDevices(units, list);
+        });
+
+        ['shelf-3u', 'shelf-6u'].forEach((groupUnits) => {
+            const shelfGroup = profile.shelves && profile.shelves[groupUnits] ? profile.shelves[groupUnits] : {};
+            const items = Array.isArray(shelfGroup.items) ? shelfGroup.items : [];
+            const deleted = Array.isArray(shelfGroup.deleted) ? shelfGroup.deleted : [];
+            localStorage.setItem(getShelfStorageKey(groupUnits), JSON.stringify(items));
+            localStorage.setItem(getShelfDeletedStorageKey(groupUnits), JSON.stringify(deleted));
+        });
+    }
+
+    function importToolbarProfileFromFile(file) {
+        if (!file) {
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function () {
+            try {
+                const parsed = JSON.parse(reader.result);
+                applyToolbarProfile(parsed);
+                window.alert('Toolbar profile imported successfully. The page will reload now.');
+                window.location.reload();
+            } catch (error) {
+                window.alert('Could not import toolbar profile.');
+            }
+        };
+        reader.readAsText(file);
     }
 
     function clearPendingPlacement() {
@@ -715,6 +818,15 @@ document.addEventListener('DOMContentLoaded', function () {
     downloadPngBtn.addEventListener('click', downloadRackAsPng);
     saveProjectBtn.addEventListener('click', saveProject);
     exportProjectBtn.addEventListener('click', exportProject);
+    exportToolbarProfileBtn.addEventListener('click', exportToolbarProfile);
+    importToolbarProfileBtn.addEventListener('click', function () {
+        toolbarProfileFileInput.value = '';
+        toolbarProfileFileInput.click();
+    });
+    toolbarProfileFileInput.addEventListener('change', function (event) {
+        const file = event.target.files && event.target.files[0];
+        importToolbarProfileFromFile(file);
+    });
     
     newProjectToolbarBtn.addEventListener('click', function () {
         const confirm = window.confirm('Start a new project? Any unsaved changes will be lost.');
