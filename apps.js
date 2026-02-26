@@ -279,6 +279,14 @@ document.addEventListener('DOMContentLoaded', function () {
         return `rack-designer-shelves-${groupUnits}`;
     }
 
+    function getShelfDeletedStorageKey(groupUnits) {
+        return `rack-designer-shelves-deleted-${groupUnits}`;
+    }
+
+    function getShelfItemKey(item) {
+        return `${item.shelfType}::${item.name}`;
+    }
+
     // Save shelf elements currently in one shelf group list.
     function saveShelfElements(groupUnits, elementList) {
         const items = Array.from(elementList.querySelectorAll('.palette-element')).map((node) => ({
@@ -293,6 +301,15 @@ document.addEventListener('DOMContentLoaded', function () {
     function loadShelfElements(groupUnits) {
         const stored = localStorage.getItem(getShelfStorageKey(groupUnits));
         return stored ? JSON.parse(stored) : null;
+    }
+
+    function loadDeletedShelfElements(groupUnits) {
+        const stored = localStorage.getItem(getShelfDeletedStorageKey(groupUnits));
+        return stored ? JSON.parse(stored) : [];
+    }
+
+    function saveDeletedShelfElements(groupUnits, deletedList) {
+        localStorage.setItem(getShelfDeletedStorageKey(groupUnits), JSON.stringify(deletedList));
     }
 
     function clearPendingPlacement() {
@@ -437,6 +454,12 @@ document.addEventListener('DOMContentLoaded', function () {
         deleteBtn.addEventListener('click', function (event) {
             event.stopPropagation();
             const list = newEntry.parentElement;
+            const deleted = loadDeletedShelfElements(groupUnits);
+            const deletedKey = getShelfItemKey({ name, shelfType });
+            if (!deleted.includes(deletedKey)) {
+                deleted.push(deletedKey);
+                saveDeletedShelfElements(groupUnits, deleted);
+            }
             newEntry.remove();
             if (list) {
                 saveShelfElements(groupUnits, list);
@@ -462,26 +485,44 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (isShelfGroup) {
                 const savedShelfElements = loadShelfElements(displayUnits);
+                const deletedShelfKeys = new Set(loadDeletedShelfElements(displayUnits));
+                const defaults = Array.from(elementList.querySelectorAll('.palette-element')).map((element) => ({
+                    name: element.querySelector('.device-name')?.textContent?.trim() || '',
+                    shelfType: element.dataset.shelfType || '',
+                })).filter((item) => item.name && item.shelfType);
+
+                const visibleDefaults = defaults.filter((item) => !deletedShelfKeys.has(getShelfItemKey(item)));
+                const merged = [];
+                const seen = new Set();
 
                 if (Array.isArray(savedShelfElements)) {
-                    elementList.innerHTML = '';
                     savedShelfElements.forEach((item) => {
-                        const entry = createShelfPaletteElement(item.name, displayUnits, item.shelfType);
-                        elementList.appendChild(entry);
+                        if (!item || !item.name || !item.shelfType) {
+                            return;
+                        }
+                        const key = getShelfItemKey(item);
+                        if (deletedShelfKeys.has(key) || seen.has(key)) {
+                            return;
+                        }
+                        seen.add(key);
+                        merged.push(item);
                     });
-                } else {
-                    const defaults = Array.from(elementList.querySelectorAll('.palette-element')).map((element) => ({
-                        name: element.querySelector('.device-name')?.textContent?.trim() || '',
-                        shelfType: element.dataset.shelfType || '',
-                    })).filter((item) => item.name && item.shelfType);
-
-                    elementList.innerHTML = '';
-                    defaults.forEach((item) => {
-                        const entry = createShelfPaletteElement(item.name, displayUnits, item.shelfType);
-                        elementList.appendChild(entry);
-                    });
-                    saveShelfElements(displayUnits, elementList);
                 }
+
+                visibleDefaults.forEach((item) => {
+                    const key = getShelfItemKey(item);
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        merged.push(item);
+                    }
+                });
+
+                elementList.innerHTML = '';
+                merged.forEach((item) => {
+                    const entry = createShelfPaletteElement(item.name, displayUnits, item.shelfType);
+                    elementList.appendChild(entry);
+                });
+                saveShelfElements(displayUnits, elementList);
                 return;
             }
 
