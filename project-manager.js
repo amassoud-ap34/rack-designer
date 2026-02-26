@@ -174,11 +174,6 @@ async function saveProject() {
     downloadProjectFile(fallbackName);
 }
 
-// Export current project as a JSON file (with default filename).
-function exportProject() {
-    downloadProjectFile('rack-project-export.json');
-}
-
 // Helper to download project as JSON file.
 function downloadProjectFile(filename) {
     const data = serializeProject();

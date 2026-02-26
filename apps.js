@@ -48,8 +48,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const downloadPngBtn = document.getElementById('downloadPngBtn');
     // Save project JSON button.
     const saveProjectBtn = document.getElementById('saveProjectBtn');
-    // Export project JSON button.
-    const exportProjectBtn = document.getElementById('exportProjectBtn');
     // Toolbar profile export/import buttons.
     const exportToolbarProfileBtn = document.getElementById('exportToolbarProfileBtn');
     const importToolbarProfileBtn = document.getElementById('importToolbarProfileBtn');
@@ -401,15 +399,24 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
+        if (!file.name.toLowerCase().endsWith('.json')) {
+            window.alert('Please select a valid .json toolbar profile file.');
+            return;
+        }
+
         const reader = new FileReader();
+        reader.onerror = function () {
+            window.alert('Could not read the selected toolbar profile file.');
+        };
         reader.onload = function () {
             try {
-                const parsed = JSON.parse(reader.result);
+                const raw = String(reader.result || '').replace(/^\uFEFF/, '');
+                const parsed = JSON.parse(raw);
                 applyToolbarProfile(parsed);
                 window.alert('Toolbar profile imported successfully. The page will reload now.');
                 window.location.reload();
             } catch (error) {
-                window.alert('Could not import toolbar profile.');
+                window.alert('Could not import toolbar profile. Please use a profile exported from this app.');
             }
         };
         reader.readAsText(file);
@@ -817,7 +824,6 @@ document.addEventListener('DOMContentLoaded', function () {
     deleteSelectedBtn.addEventListener('click', deleteSelectedNode);
     downloadPngBtn.addEventListener('click', downloadRackAsPng);
     saveProjectBtn.addEventListener('click', saveProject);
-    exportProjectBtn.addEventListener('click', exportProject);
     exportToolbarProfileBtn.addEventListener('click', exportToolbarProfile);
     importToolbarProfileBtn.addEventListener('click', function () {
         toolbarProfileFileInput.value = '';
@@ -947,7 +953,6 @@ document.addEventListener('DOMContentLoaded', function () {
     window.resetWorkspace = resetWorkspace;
     window.saveProject = saveProject;
     window.saveAutoSaveSilently = saveAutoSaveSilently;
-    window.exportProject = exportProject;
     window.loadProject = loadProject;
     window.startAutoSave = startAutoSave;
     window.checkAutoSaveRecovery = checkAutoSaveRecovery;
