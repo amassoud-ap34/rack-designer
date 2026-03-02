@@ -1007,10 +1007,10 @@ document.addEventListener('DOMContentLoaded', function () {
     // Initialize schema stats values.
     updateSchemaElementStats();
     
-    // Check for auto-save recovery and show project modal if not recovered.
+    // Check for auto-save recovery; otherwise start auto-save for current session.
     const recovered = checkAutoSaveRecovery();
     if (!recovered) {
-        showProjectModal();
+        startAutoSave();
     }
 
     // Expose layout serializer helper for quick debugging/export.
