@@ -10,6 +10,9 @@ function resetWorkspace() {
     appState.currentProjectFilename = null;
     appState.currentProjectFileHandle = null;
     appState.layer.batchDraw();
+    if (typeof window.updateSchemaElementStats === 'function') {
+        window.updateSchemaElementStats();
+    }
 }
 
 // Serialize a device (or shelf) for export.
@@ -20,6 +23,7 @@ function serializeDevice(device) {
         units: device.getAttr('units'),
         displayUnits: device.getAttr('displayUnits'),
         name: device.getAttr('deviceName') || '',
+        comment: device.getAttr('deviceComment') || '',
         customColor: device.getAttr('customColor') || null,
         customFontColor: device.getAttr('customFontColor') || null,
         deviceWidth: device.getAttr('deviceWidth') || null,
@@ -42,6 +46,7 @@ function serializeDevice(device) {
                 units: child.getAttr('units'),
                 displayUnits: child.getAttr('displayUnits'),
                 name: child.getAttr('deviceName') || '',
+                comment: child.getAttr('deviceComment') || '',
                 customColor: child.getAttr('customColor') || null,
                 customFontColor: child.getAttr('customFontColor') || null,
                 deviceWidth: child.getAttr('deviceWidth') || null,
@@ -106,7 +111,7 @@ function loadProject(project, filename) {
 
                     if (Array.isArray(deviceData.children)) {
                         deviceData.children.forEach((childData) => {
-                            const child = createDevice(childData.displayUnits, childData.name, childData.customColor, childData.customFontColor);
+                            const child = createDevice(childData.displayUnits, childData.name, childData.customColor, childData.customFontColor, childData.comment || '');
                             const slotIndex = childData.shelfSlotIndex;
 
                             child.setAttr('deviceWidth', childData.deviceWidth || getDeviceWidth(child));
@@ -122,7 +127,7 @@ function loadProject(project, filename) {
                         });
                     }
                 } else {
-                    const device = createDevice(deviceData.displayUnits, deviceData.name, deviceData.customColor, deviceData.customFontColor);
+                    const device = createDevice(deviceData.displayUnits, deviceData.name, deviceData.customColor, deviceData.customFontColor, deviceData.comment || '');
                     device.setAttr('deviceWidth', deviceData.deviceWidth || getDeviceWidth(device));
                     device.position({ x: deviceData.x, y: deviceData.y });
                     rack.add(device);
@@ -133,6 +138,9 @@ function loadProject(project, filename) {
 
     appState.nextRackNameNumber = appState.layer.find('.rack').length + 1;
     appState.layer.batchDraw();
+    if (typeof window.updateSchemaElementStats === 'function') {
+        window.updateSchemaElementStats();
+    }
 }
 
 // Save project using a save dialog where user can choose new name or overwrite existing file.

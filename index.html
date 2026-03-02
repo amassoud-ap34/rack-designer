@@ -94,7 +94,7 @@
                         <button type="button" class="device-group-toggle">Shelf 3U ▾</button>
                         <div class="device-group-body">
                             <div class="element-list">
-                                <div class="palette-element" data-units="shelf-3u" data-shelf-type="3u-4" draggable="true">
+                                <div class="palette-element" data-units="shelf-3u" data-shelf-type="3u-blinder" draggable="true">
                                     <span class="device-name">Shelf 3U (Blinder)</span>
                                 </div>
                                 <div class="palette-element" data-units="shelf-3u" data-shelf-type="3u-4" draggable="true">
@@ -121,6 +121,21 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+        <div id="schemaStatsPanel" class="schema-stats-panel">
+            <div class="schema-stats-header">
+                <span class="schema-stats-title">Schema Elements</span>
+                <button id="toggleSchemaStatsBtn" type="button" class="toolbar-icon-btn" aria-expanded="true" title="Collapse/Expand schema element stats">▶</button>
+            </div>
+            <div id="schemaStatsBody" class="schema-stats-body">
+                <div class="schema-stats-summary">
+                    <div class="schema-stats-item"><span>Total</span><strong id="schemaStatsTotal">0</strong></div>
+                    <div class="schema-stats-item"><span>Types</span><strong id="schemaStatsTypes">0</strong></div>
+                    <div class="schema-stats-item"><span>Racks</span><strong id="schemaStatsRacks">0</strong></div>
+                </div>
+                <div id="schemaStatsEmpty" class="schema-stats-empty">No elements placed yet.</div>
+                <div id="schemaStatsList" class="schema-stats-list"></div>
             </div>
         </div>
         <div id="container"></div>

@@ -20,6 +20,7 @@ let appState = {
     currentProjectFileHandle: null,
     pendingPlacement: null,
     pendingPaletteNode: null,
+    isSchemaStatsCollapsed: false,
 };
 
 // Run the app only after the HTML is fully loaded.
@@ -52,6 +53,15 @@ document.addEventListener('DOMContentLoaded', function () {
     const exportToolbarProfileBtn = document.getElementById('exportToolbarProfileBtn');
     const importToolbarProfileBtn = document.getElementById('importToolbarProfileBtn');
     const toolbarProfileFileInput = document.getElementById('toolbarProfileFileInput');
+    // Schema element stats panel elements.
+    const schemaStatsPanel = document.getElementById('schemaStatsPanel');
+    const schemaStatsBody = document.getElementById('schemaStatsBody');
+    const schemaStatsList = document.getElementById('schemaStatsList');
+    const schemaStatsEmpty = document.getElementById('schemaStatsEmpty');
+    const schemaStatsTotal = document.getElementById('schemaStatsTotal');
+    const schemaStatsTypes = document.getElementById('schemaStatsTypes');
+    const schemaStatsRacks = document.getElementById('schemaStatsRacks');
+    const toggleSchemaStatsBtn = document.getElementById('toggleSchemaStatsBtn');
     // Auto-save status elements.
     const autoSaveStatus = document.getElementById('autoSaveStatus');
     const autoSaveText = document.getElementById('autoSaveText');
@@ -160,7 +170,6 @@ document.addEventListener('DOMContentLoaded', function () {
     // Resize workspace so full rack height is always reachable by scroll.
     function resizeWorkspace() {
         requestAnimationFrame(() => {
-            const container = document.getElementById('container');
             const viewportHeight = window.innerHeight;
             const minWorkspaceHeight = Math.ceil(rackHeight + (unitHeight * 2));
             const workspaceHeight = Math.max(viewportHeight, minWorkspaceHeight);
@@ -184,11 +193,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Sync toolbar classes, aria states, and workspace sizing.
     function syncToolbarState() {
-        const toolbar = document.getElementById('toolbar');
-        const toggleToolbarBtn = document.getElementById('toggleToolbarBtn');
-        const pinToolbarBtn = document.getElementById('pinToolbarBtn');
-        const toolbarBody = document.getElementById('toolbarBody');
-        
         toolbar.classList.toggle('collapsed', appState.isToolbarCollapsed);
         toolbar.classList.toggle('pinned', appState.isToolbarPinned);
         toolbar.classList.toggle('unpinned', !appState.isToolbarPinned);
@@ -204,8 +208,97 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Enable/disable delete button depending on selection.
     function updateDeleteButtonState() {
-        const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
         deleteSelectedBtn.disabled = !appState.selectedNode;
+    }
+
+    function getFirstSelectedFile(event) {
+        return event.target.files && event.target.files[0];
+    }
+
+    function openProjectFilePicker() {
+        projectFileInput.value = '';
+        projectFileInput.click();
+    }
+
+    function openToolbarProfileFilePicker() {
+        toolbarProfileFileInput.value = '';
+        toolbarProfileFileInput.click();
+    }
+
+    // Build counts map for all placed schema elements (devices and shelves).
+    function buildSchemaElementCounts() {
+        const counts = new Map();
+        const rackNodes = appState.layer ? appState.layer.find('.rack') : [];
+        const deviceNodes = appState.layer ? appState.layer.find('.device') : [];
+
+        rackNodes.forEach((rackNode) => {
+            const rawRackName = rackNode.getAttr('rackName');
+            const rackName = typeof rawRackName === 'string' && rawRackName.trim() ? rawRackName.trim() : 'Unnamed Rack';
+            const key = `Rack: ${rackName}`;
+            counts.set(key, (counts.get(key) || 0) + 1);
+        });
+
+        deviceNodes.forEach((node) => {
+            const rawName = node.getAttr('deviceName');
+            const name = typeof rawName === 'string' && rawName.trim() ? rawName.trim() : 'Unnamed Element';
+            counts.set(name, (counts.get(name) || 0) + 1);
+        });
+
+        return {
+            counts,
+            rackCount: rackNodes.length,
+        };
+    }
+
+    // Render right panel rows and totals from current schema.
+    function updateSchemaElementStats() {
+        if (!schemaStatsList || !schemaStatsTotal || !schemaStatsTypes || !schemaStatsRacks || !schemaStatsEmpty) {
+            return;
+        }
+
+        const { counts, rackCount } = buildSchemaElementCounts();
+        const rows = Array.from(counts.entries()).sort((left, right) => {
+            if (right[1] !== left[1]) {
+                return right[1] - left[1];
+            }
+            return left[0].localeCompare(right[0]);
+        });
+
+        const total = rows.reduce((sum, row) => sum + row[1], 0);
+        schemaStatsTotal.textContent = String(total);
+        schemaStatsTypes.textContent = String(rows.length);
+        schemaStatsRacks.textContent = String(rackCount);
+
+        schemaStatsList.innerHTML = '';
+        schemaStatsEmpty.hidden = rows.length > 0;
+
+        rows.forEach(([name, count]) => {
+            const row = document.createElement('div');
+            row.className = 'schema-stats-row';
+
+            const nameEl = document.createElement('span');
+            nameEl.className = 'schema-name';
+            nameEl.textContent = name;
+
+            const countEl = document.createElement('span');
+            countEl.className = 'schema-count';
+            countEl.textContent = String(count);
+
+            row.appendChild(nameEl);
+            row.appendChild(countEl);
+            schemaStatsList.appendChild(row);
+        });
+    }
+
+    function syncSchemaStatsPanelState() {
+        if (!schemaStatsPanel || !toggleSchemaStatsBtn || !schemaStatsBody) {
+            return;
+        }
+
+        schemaStatsPanel.classList.toggle('collapsed', appState.isSchemaStatsCollapsed);
+        toggleSchemaStatsBtn.textContent = appState.isSchemaStatsCollapsed ? '◀' : '▶';
+        toggleSchemaStatsBtn.setAttribute('aria-expanded', String(!appState.isSchemaStatsCollapsed));
+        schemaStatsBody.hidden = appState.isSchemaStatsCollapsed;
     }
 
     // Remove highlight from selected node.
@@ -258,6 +351,7 @@ document.addEventListener('DOMContentLoaded', function () {
         appState.selectedNode = null;
         updateDeleteButtonState();
         appState.layer.batchDraw();
+        updateSchemaElementStats();
         if (typeof saveAutoSaveSilently === 'function') {
             saveAutoSaveSilently();
         }
@@ -712,12 +806,11 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         openProjectBtn.addEventListener('click', function () {
-            projectFileInput.value = '';
-            projectFileInput.click();
+            openProjectFilePicker();
         });
 
         projectFileInput.addEventListener('change', function (event) {
-            const file = event.target.files && event.target.files[0];
+            const file = getFirstSelectedFile(event);
             if (!file) {
                 return;
             }
@@ -806,6 +899,11 @@ document.addEventListener('DOMContentLoaded', function () {
         syncToolbarState();
     });
 
+    toggleSchemaStatsBtn.addEventListener('click', function () {
+        appState.isSchemaStatsCollapsed = !appState.isSchemaStatsCollapsed;
+        syncSchemaStatsPanelState();
+    });
+
     toolbar.addEventListener('mouseenter', function () {
         if (!appState.isToolbarPinned) {
             appState.isToolbarCollapsed = false;
@@ -826,11 +924,10 @@ document.addEventListener('DOMContentLoaded', function () {
     saveProjectBtn.addEventListener('click', saveProject);
     exportToolbarProfileBtn.addEventListener('click', exportToolbarProfile);
     importToolbarProfileBtn.addEventListener('click', function () {
-        toolbarProfileFileInput.value = '';
-        toolbarProfileFileInput.click();
+        openToolbarProfileFilePicker();
     });
     toolbarProfileFileInput.addEventListener('change', function (event) {
-        const file = event.target.files && event.target.files[0];
+        const file = getFirstSelectedFile(event);
         importToolbarProfileFromFile(file);
     });
     
@@ -843,8 +940,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     
     openProjectToolbarBtn.addEventListener('click', function () {
-        projectFileInput.value = '';
-        projectFileInput.click();
+        openProjectFilePicker();
     });
 
     // --- Click-to-place from palette to canvas ---
@@ -904,8 +1000,12 @@ document.addEventListener('DOMContentLoaded', function () {
     initializeColorPickerModal();
     // Initialize toolbar visuals/layout.
     syncToolbarState();
+    // Initialize schema stats panel visuals/layout.
+    syncSchemaStatsPanelState();
     // Initialize delete button status.
     updateDeleteButtonState();
+    // Initialize schema stats values.
+    updateSchemaElementStats();
     
     // Check for auto-save recovery and show project modal if not recovered.
     const recovered = checkAutoSaveRecovery();
@@ -948,6 +1048,7 @@ document.addEventListener('DOMContentLoaded', function () {
     window.attachTooltip = attachTooltip;
     window.updateDeleteButtonState = updateDeleteButtonState;
     window.deleteSelectedNode = deleteSelectedNode;
+    window.updateSchemaElementStats = updateSchemaElementStats;
     
     // Expose project-manager.js functions globally
     window.resetWorkspace = resetWorkspace;

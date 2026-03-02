@@ -1,6 +1,12 @@
 // Rack Creation and Device Placement Logic
 // Depends on: constants.js, utils.js, and app state variables (stage, layer, tooltipLayer, etc.)
 
+function refreshSchemaElementStats() {
+    if (typeof window.updateSchemaElementStats === 'function') {
+        window.updateSchemaElementStats();
+    }
+}
+
 // Find rack under a stage point.
 function getRackAtPoint(point) {
     const racks = appState.layer.find('.rack');
@@ -131,14 +137,49 @@ function getShelfAtPoint(point) {
 function ensureShelfSlots(shelf) {
     if (!shelf._slotOccupancy) {
         const numSlots = shelf.getAttr('numSlots');
-        shelf._slotOccupancy = new Array(numSlots).fill(null);
+        if (Number.isInteger(numSlots) && numSlots > 0) {
+            shelf._slotOccupancy = new Array(numSlots).fill(null);
+        } else {
+            shelf._slotOccupancy = [];
+        }
     }
 }
 
 // Return the next free slot index from left to right.
 function getNextFreeShelfSlotIndex(shelf) {
     ensureShelfSlots(shelf);
+    if (!shelf._slotOccupancy.length) {
+        return -1;
+    }
     return shelf._slotOccupancy.findIndex((slot) => slot === null);
+}
+
+function placeDeviceInBlinderShelf(device, shelf) {
+    const shelfHeight = shelf.getAttr('deviceHeight') || 0;
+    const shelfWidth = rackInnerWidth;
+    const deviceWidth = getDeviceWidth(device);
+    const deviceHeight = device.getAttr('deviceHeight') || 0;
+
+    const siblings = shelf.getChildren().filter((child) => child.hasName && child.hasName('device'));
+    let nextX = 0;
+
+    siblings.forEach((child) => {
+        const childRight = child.x() + getDeviceWidth(child);
+        if (childRight > nextX) {
+            nextX = childRight;
+        }
+    });
+
+    if (nextX + deviceWidth > shelfWidth) {
+        return false;
+    }
+
+    const centeredY = Math.max(0, Math.round((shelfHeight - deviceHeight) / 2));
+    device.moveTo(shelf);
+    device.position({ x: nextX, y: centeredY });
+    device.setAttr('inShelf', true);
+    device.setAttr('shelfSlotIndex', null);
+    return true;
 }
 
 // Free a reserved shelf slot for a device.
@@ -164,6 +205,10 @@ function releaseShelfSlotForDevice(device) {
 
 // Check if a device can go into a shelf type.
 function isDeviceCompatibleWithShelf(device, shelf) {
+    if (shelf.getAttr('acceptsAnyElement')) {
+        return true;
+    }
+
     const shelfType = shelf.getAttr('shelfType') || '';
     const displayUnits = device.getAttr('displayUnits');
 
@@ -182,6 +227,10 @@ function isDeviceCompatibleWithShelf(device, shelf) {
 function placeDeviceInShelf(device, shelf, dropPoint) {
     if (!isDeviceCompatibleWithShelf(device, shelf)) {
         return false;
+    }
+
+    if (shelf.getAttr('acceptsAnyElement')) {
+        return placeDeviceInBlinderShelf(device, shelf);
     }
 
     const numSlots = shelf.getAttr('numSlots');
@@ -204,6 +253,10 @@ function placeDeviceInShelf(device, shelf, dropPoint) {
 
 // Place a device in a specific shelf slot index.
 function placeDeviceInShelfSlot(device, shelf, slotIndex) {
+    if (shelf.getAttr('acceptsAnyElement')) {
+        return false;
+    }
+
     if (!isDeviceCompatibleWithShelf(device, shelf)) {
         return false;
     }
@@ -258,6 +311,7 @@ function placePayloadAtRackUnit(payload, rack, startUnit) {
 
     placeElementAtStartUnit(element, rack, normalizedStart);
     appState.layer.batchDraw();
+    refreshSchemaElementStats();
     if (typeof window.saveAutoSaveSilently === 'function') {
         window.saveAutoSaveSilently();
     }
@@ -282,6 +336,31 @@ function placePayloadInShelfSlot(payload, shelf, slotIndex) {
     }
 
     appState.layer.batchDraw();
+    refreshSchemaElementStats();
+    if (typeof window.saveAutoSaveSilently === 'function') {
+        window.saveAutoSaveSilently();
+    }
+    return true;
+}
+
+function placePayloadInBlinderShelf(payload, shelf) {
+    if (payload.shelfType) {
+        window.alert('Shelf elements must be placed on rack units.');
+        return false;
+    }
+
+    const displayUnits = parseInt(payload.units, 10) || payload.units;
+    const device = createDevice(displayUnits, payload.name, payload.color || null, payload.fontColor || null);
+    const placed = placeDeviceInShelf(device, shelf, null);
+
+    if (!placed) {
+        device.destroy();
+        window.alert('No available space on this shelf for the selected element.');
+        return false;
+    }
+
+    appState.layer.batchDraw();
+    refreshSchemaElementStats();
     if (typeof window.saveAutoSaveSilently === 'function') {
         window.saveAutoSaveSilently();
     }
@@ -291,18 +370,22 @@ function placePayloadInShelfSlot(payload, shelf, slotIndex) {
 // Create a shelf device with internal slots (vertical dividers).
 function createShelf(shelfType, elementName) {
     const shelfConfigs = {
+        '3u-blinder': { displayUnits: 3, numSlots: 0, name: 'Shelf 3U (Blinder)', acceptsAnyElement: true },
         '3u-4': { displayUnits: 3, numSlots: 4, name: 'Shelf 3U (4 slots)' },
         '3u-6': { displayUnits: 3, numSlots: 6, name: 'Shelf 3U (6 slots)' },
         '6u-3': { displayUnits: 4, numSlots: 3, name: 'Shelf 6U (3 slots)' },
         '6u-4': { displayUnits: 4, numSlots: 4, name: 'Shelf 6U (4 slots)' },
     };
 
-    const config = shelfConfigs[shelfType];
+    const normalizedShelfType = shelfType === '3u-4' && /blinder/i.test(elementName || '')
+        ? '3u-blinder'
+        : shelfType;
+    const config = shelfConfigs[normalizedShelfType] || shelfConfigs['3u-4'];
     const { displayUnits, numSlots } = config;
     const shelfName = elementName || config.name;
     const reservedUnits = getReservedUnits(displayUnits);
     const deviceHeight = reservedUnits * unitHeight;
-    const slotWidth = rackInnerWidth / numSlots;
+    const slotWidth = numSlots > 0 ? rackInnerWidth / numSlots : null;
 
     const colors = { fill: '#E8E8E8', stroke: '#A0AEC0', text: '#2D3748' };
 
@@ -320,12 +403,13 @@ function createShelf(shelfType, elementName) {
         deviceName: shelfName,
         customColor: null,
         isShelf: true,
-        shelfType,
+        shelfType: normalizedShelfType,
         numSlots,
         slotWidth,
+        acceptsAnyElement: Boolean(config.acceptsAnyElement),
     });
 
-    device._slotOccupancy = new Array(numSlots).fill(null);
+    device._slotOccupancy = numSlots > 0 ? new Array(numSlots).fill(null) : [];
 
     const body = new Konva.Rect({
         x: 0,
@@ -364,51 +448,87 @@ function createShelf(shelfType, elementName) {
 
     device.add(label);
 
-    for (let i = 1; i < numSlots; i++) {
-        const xPos = i * slotWidth;
-        device.add(new Konva.Line({
-            points: [xPos, 0, xPos, deviceHeight],
-            stroke: colors.stroke,
-            strokeWidth: 1,
-            listening: false,
-        }));
-    }
+    if (numSlots > 0) {
+        for (let i = 1; i < numSlots; i++) {
+            const xPos = i * slotWidth;
+            device.add(new Konva.Line({
+                points: [xPos, 0, xPos, deviceHeight],
+                stroke: colors.stroke,
+                strokeWidth: 1,
+                listening: false,
+            }));
+        }
 
-    for (let i = 0; i < numSlots; i++) {
-        const slotRect = new Konva.Rect({
-            x: i * slotWidth,
+        for (let i = 0; i < numSlots; i++) {
+            const slotRect = new Konva.Rect({
+                x: i * slotWidth,
+                y: 0,
+                width: slotWidth,
+                height: deviceHeight,
+                fill: 'transparent',
+                listening: true,
+                name: 'shelf-slot',
+            });
+            slotRect.setAttr('slotIndex', i);
+
+            slotRect.on('mouseenter', function () {
+                slotRect.fill('rgba(104, 119, 224, 0.08)');
+                appState.layer.batchDraw();
+            });
+
+            slotRect.on('mouseleave', function () {
+                slotRect.fill('transparent');
+                appState.layer.batchDraw();
+            });
+
+            slotRect.on('click tap', function (event) {
+                if (!appState.pendingPlacement) {
+                    return;
+                }
+
+                event.cancelBubble = true;
+                const placed = placePayloadInShelfSlot(appState.pendingPlacement, device, i);
+                if (placed && typeof window.clearPendingPlacement === 'function') {
+                    window.clearPendingPlacement();
+                }
+            });
+
+            device.add(slotRect);
+        }
+    } else {
+        const dropZone = new Konva.Rect({
+            x: 0,
             y: 0,
-            width: slotWidth,
+            width: rackInnerWidth,
             height: deviceHeight,
             fill: 'transparent',
             listening: true,
-            name: 'shelf-slot',
+            name: 'shelf-drop-zone',
         });
-        slotRect.setAttr('slotIndex', i);
 
-        slotRect.on('mouseenter', function () {
-            slotRect.fill('rgba(104, 119, 224, 0.08)');
+        dropZone.on('mouseenter', function () {
+            dropZone.fill('rgba(104, 119, 224, 0.08)');
             appState.layer.batchDraw();
         });
 
-        slotRect.on('mouseleave', function () {
-            slotRect.fill('transparent');
+        dropZone.on('mouseleave', function () {
+            dropZone.fill('transparent');
             appState.layer.batchDraw();
         });
 
-        slotRect.on('click tap', function (event) {
+        dropZone.on('click tap', function (event) {
             if (!appState.pendingPlacement) {
                 return;
             }
 
             event.cancelBubble = true;
-            const placed = placePayloadInShelfSlot(appState.pendingPlacement, device, i);
+            const placed = placePayloadInBlinderShelf(appState.pendingPlacement, device);
             if (placed && typeof window.clearPendingPlacement === 'function') {
                 window.clearPendingPlacement();
             }
         });
 
-        device.add(slotRect);
+        device.add(dropZone);
     }
 
     device.on('click tap', function (event) {
@@ -430,6 +550,7 @@ function createShelf(shelfType, elementName) {
         device.setAttr('deviceName', cleanName);
         textNode.text(cleanName);
         appState.layer.batchDraw();
+        refreshSchemaElementStats();
     });
 
     attachTooltip(device);
@@ -438,7 +559,7 @@ function createShelf(shelfType, elementName) {
 }
 
 // Create one draggable device node.
-function createDevice(displayUnits, elementName, customColor, customFontColor) {
+function createDevice(displayUnits, elementName, customColor, customFontColor, deviceComment) {
     const reservedUnits = getReservedUnits(displayUnits);
     const deviceHeight = reservedUnits * unitHeight;
     const defaultName = elementName || `Device ${displayUnits}U`;
@@ -476,6 +597,7 @@ function createDevice(displayUnits, elementName, customColor, customFontColor) {
         deviceHeight,
         deviceWidth,
         deviceName: defaultName,
+        deviceComment: deviceComment || '',
         customColor: customColor || null,
         customFontColor: customFontColor || null,
     });
@@ -495,26 +617,78 @@ function createDevice(displayUnits, elementName, customColor, customFontColor) {
         name: 'device-body',
     });
 
-    const label = new Konva.Text({
-        x: 3,
-        y: 0,
-        width: deviceWidth - 6,
-        height: deviceHeight,
-        text: defaultName,
-        fontSize: Math.max(8, Math.min(13, deviceHeight - 2)),
-        fill: colors.text,
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-        fontStyle: '500',
-        verticalAlign: 'middle',
-        align: 'center',
-        wrap: 'none',
-        ellipsis: true,
-        listening: false,
-        name: 'device-label',
-    });
-
     device.add(body);
-    device.add(label);
+
+    if (displayUnits === 3 || displayUnits === 4) {
+        const splitY = Math.round(deviceHeight / 2);
+
+        const divider = new Konva.Line({
+            points: [0, splitY, deviceWidth, splitY],
+            stroke: colors.stroke,
+            strokeWidth: 1,
+            listening: false,
+            name: 'device-divider',
+        });
+
+        const topLabel = new Konva.Text({
+            x: 3,
+            y: 0,
+            width: deviceWidth - 6,
+            height: splitY,
+            text: defaultName,
+            fontSize: Math.max(8, Math.min(13, splitY - 2)),
+            fill: colors.text,
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontStyle: '600',
+            verticalAlign: 'middle',
+            align: 'center',
+            wrap: 'none',
+            ellipsis: true,
+            listening: false,
+            name: 'device-name-label',
+        });
+
+        const bottomLabel = new Konva.Text({
+            x: 3,
+            y: splitY,
+            width: deviceWidth - 6,
+            height: deviceHeight - splitY,
+            text: deviceComment || '',
+            fontSize: Math.max(7, Math.min(12, (deviceHeight - splitY) - 2)),
+            fill: colors.text,
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontStyle: '400',
+            verticalAlign: 'middle',
+            align: 'center',
+            wrap: 'word',
+            listening: false,
+            name: 'device-comment-label',
+        });
+
+        device.add(divider);
+        device.add(topLabel);
+        device.add(bottomLabel);
+    } else {
+        const label = new Konva.Text({
+            x: 3,
+            y: 0,
+            width: deviceWidth - 6,
+            height: deviceHeight,
+            text: defaultName,
+            fontSize: Math.max(8, Math.min(13, deviceHeight - 2)),
+            fill: colors.text,
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontStyle: '500',
+            verticalAlign: 'middle',
+            align: 'center',
+            wrap: 'none',
+            ellipsis: true,
+            listening: false,
+            name: 'device-label',
+        });
+
+        device.add(label);
+    }
 
     device.on('click tap', function (event) {
         event.cancelBubble = true;
@@ -524,6 +698,7 @@ function createDevice(displayUnits, elementName, customColor, customFontColor) {
     device.on('dblclick dbltap', function () {
         selectNode(device);
         const currentName = device.getAttr('deviceName');
+        const isSplitDevice = displayUnits === 3 || displayUnits === 4;
         const nextName = window.prompt('Edit device name:', currentName);
 
         if (nextName === null) {
@@ -531,10 +706,27 @@ function createDevice(displayUnits, elementName, customColor, customFontColor) {
         }
 
         const cleanName = nextName.trim() || currentName;
-        const textNode = device.findOne('.device-label');
+        const currentComment = device.getAttr('deviceComment') || '';
+        let cleanComment = currentComment;
+
+        if (isSplitDevice) {
+            const nextComment = window.prompt('Edit device comment:', currentComment);
+            if (nextComment === null) {
+                return;
+            }
+            cleanComment = nextComment.trim();
+        }
+
+        const textNode = device.findOne('.device-name-label') || device.findOne('.device-label');
+        const commentNode = device.findOne('.device-comment-label');
         device.setAttr('deviceName', cleanName);
+        device.setAttr('deviceComment', cleanComment);
         textNode.text(cleanName);
+        if (commentNode) {
+            commentNode.text(cleanComment);
+        }
         appState.layer.batchDraw();
+        refreshSchemaElementStats();
     });
 
     attachTooltip(device);
@@ -580,6 +772,7 @@ function addDeviceToRack(displayUnits, rack, dropPoint, elementName, customColor
     }
 
     appState.layer.batchDraw();
+    refreshSchemaElementStats();
 }
 
 // Build unit grid + side labels for one rack.
@@ -763,10 +956,12 @@ function createRack(x, y, rackName) {
         rack.findOne('.rack-name-label').text(cleanRackName);
         nextRackNameNumber = 1;
         appState.layer.batchDraw();
+        refreshSchemaElementStats();
     });
 
     appState.layer.add(rack);
     appState.layer.batchDraw();
+    refreshSchemaElementStats();
     return rack;
 }
 
