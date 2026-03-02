@@ -34,6 +34,9 @@ function applyBorder(node, className, color, width) {
 
 // Toggle modal visibility.
 function toggleModal(modal, show) {
+    if (!modal) {
+        return;
+    }
     modal.classList.toggle('hidden', !show);
 }
 

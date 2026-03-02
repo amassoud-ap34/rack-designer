@@ -1614,16 +1614,24 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Wire up project modal actions.
     function initializeProjectModal() {
-        newProjectBtn.addEventListener('click', function () {
-            resetWorkspace();
-            hideProjectModal();
-            startAutoSave();
-        });
+        if (newProjectBtn) {
+            newProjectBtn.addEventListener('click', function () {
+                resetWorkspace();
+                hideProjectModal();
+                startAutoSave();
+            });
+        }
 
-        openProjectBtn.addEventListener('click', function () {
-            projectFileInput.value = '';
-            projectFileInput.click();
-        });
+        if (openProjectBtn) {
+            openProjectBtn.addEventListener('click', function () {
+                projectFileInput.value = '';
+                projectFileInput.click();
+            });
+        }
+
+        if (!projectFileInput) {
+            return;
+        }
 
         projectFileInput.addEventListener('change', function (event) {
             const file = event.target.files && event.target.files[0];
